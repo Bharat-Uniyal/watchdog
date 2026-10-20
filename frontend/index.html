@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watchdog</title>
+<style>
+:root{--bg:#f4f7fa;--card:#fff;--ink:#1f2937;--mut:#5b6b7f;--acc:#0f9d8e;--line:#dde3ea;--new:#16a34a;--chg:#d97706}
+@media(prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#111a2e;--ink:#e5e7eb;--mut:#94a3b8;--line:#243047}}
+body{font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:20px}
+main{max-width:900px;margin:auto}h1{margin:0 0 4px}.sub{color:var(--mut);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+form{display:grid;grid-template-columns:1fr 1fr;gap:8px}form .full{grid-column:1/-1}
+input,select,textarea,button{font:inherit;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+button{background:var(--acc);color:#fff;border:0;cursor:pointer}button.ghost{background:none;color:var(--mut);border:1px solid var(--line)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.grow{flex:1}
+.badge{font-size:12px;padding:1px 8px;border-radius:10px;color:#fff}.new{background:var(--new)}.chg{background:var(--chg)}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left}
+.err{color:#dc2626}.mut{color:var(--mut);font-size:13px}#digest{border-left:4px solid var(--acc)}
+</style></head><body><main>
+<h1>Watchdog</h1><p class="sub">One tracker for anything on the web. Powered by TinyFish web agents.</p>
+<div class="card"><form id="f">
+<input name="name" placeholder="Name (e.g. Google internships)" required>
+<input name="url" type="url" placeholder="https://..." required>
+<select name="template" id="tpl"></select>
+<select name="freq"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select>
+<textarea name="goal" class="full" rows="2" placeholder="Goal in plain English (required for Custom, optional extra for templates)"></textarea>
+<button class="full">Add watch</button></form></div>
+<div class="row"><button id="all">Check all now</button><button id="dg" class="ghost">AI digest</button><span id="st" class="mut grow"></span></div>
+<div id="digest" class="card" hidden></div><div id="list"></div>
+</main><script>
+const $=s=>document.querySelector(s),api=(p,o)=>fetch('/api'+p,o).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.detail||'Request failed');return j});
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
+async function load(){const ws=await api('/watches'),L=$('#list');L.replaceChildren();
+ if(!ws.length)L.append(el('p','mut','No watches yet. Add one above.'));
+ for(const w of ws){const c=el('div','card'),h=el('div','row'),r=w.latest;
+  h.append(el('b','grow',w.name+' · '+w.template),el('span','mut',w.freq));
+  const chk=el('button','ghost','Check');chk.onclick=()=>run('/check?watch_id='+w.id);
+  const del=el('button','ghost','Delete');del.onclick=async()=>{await api('/watches/'+w.id,{method:'DELETE'});load()};
+  h.append(chk,del);c.append(h,el('div','mut',w.url));
+  if(!r)c.append(el('p','mut','Not checked yet.'));
+  else if(!r.ok)c.append(el('p','err','Last check failed: '+r.error));
+  else{
+   for(const ch of r.changes){const p=el('div');p.append(el('span','badge '+(ch.type=='new'?'new':'chg'),ch.type.toUpperCase()),el('span','',' '+(ch.diff?Object.entries(ch.diff).map(([k,v])=>k+': '+v[0]+' → '+v[1]).join(', '):Object.values(ch.item).slice(0,3).join(' · '))));c.append(p)}
+   const items=r.items||[],cols=[...new Set(items.flatMap(Object.keys))].slice(0,6),sc=el('div','scroll'),t=el('table'),tr=el('tr');
+   cols.forEach(k=>tr.append(el('th','',k)));t.append(tr);
+   items.forEach(i=>{const row=el('tr');cols.forEach(k=>row.append(el('td','',i[k]??'')));t.append(row)});
+   sc.append(t);c.append(sc,el('div','mut','Checked '+new Date(r.ts*1000).toLocaleString()+' · '+items.length+' item(s)'))}
+  L.append(c)}}
+async function run(p){$('#st').textContent='Agents running...';try{await api(p,{method:'POST'});$('#st').textContent='Done.'}catch(e){$('#st').textContent=e.message}load()}
+$('#all').onclick=()=>run('/check');
+$('#dg').onclick=async()=>{const d=$('#digest');d.hidden=false;d.textContent='Writing digest...';try{d.textContent=(await api('/digest',{method:'POST'})).digest}catch(e){d.textContent=e.message}};
+$('#f').onsubmit=async e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.target));try{await api('/watches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});e.target.reset();load()}catch(x){$('#st').textContent=x.message}};
+api('/templates').then(t=>{for(const[k,v]of Object.entries(t))$('#tpl').append(new Option(v,k))});load();
+</script></body></html>
